@@ -1,0 +1,687 @@
+[Associazione RedPark.html](https://github.com/user-attachments/files/23026165/Associazione.RedPark.html)
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#3B82F6">
+  <meta name="description" content="App gestione associazione - Cassa, iscritti, presenze">
+  <title>Gestione Associazione</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React e ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel per JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { LogIn, Users, DollarSign, Calendar, UserPlus, LogOut, RefreshCw } = lucide;
+
+    // ⚠️ IMPORTANTE: SOSTITUISCI QUESTE CREDENZIALI CON LE TUE DI FIREBASE!
+    // Vai su https://console.firebase.google.com
+    // Crea un progetto > Realtime Database > Ottieni le credenziali
+    
+const firebaseConfig = {
+  apiKey: "AIzaSyAregIZNPfa7hU7pMEx3Askv487q-D5tx8",
+  authDomain: "associazione-redpark.firebaseapp.com",
+  databaseURL: "https://associazione-redpark-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "associazione-redpark",
+  storageBucket: "associazione-redpark.firebasestorage.app",
+  messagingSenderId: "309814144615",
+  appId: "1:309814144615:web:1c37ea0688a820be32eec2",
+  measurementId: "G-72D8EQJLHT"
+};
+
+    const PERSONE = ['Luz', 'Miche', 'Nicco', 'Sara', 'Manu'];
+    const DB_URL = firebaseConfig.databaseURL;
+
+    function Icon({ name, className = "", ...props }) {
+      const LucideIcon = lucide[name];
+      return <i data-lucide={name.toLowerCase()} className={className}></i>;
+    }
+
+    function AssociazioneApp() {
+      const [isLoggedIn, setIsLoggedIn] = useState(false);
+      const [password, setPassword] = useState('');
+      const [activeTab, setActiveTab] = useState('cassa');
+      const [syncing, setSyncing] = useState(false);
+      
+      const [movimenti, setMovimenti] = useState([]);
+      const [soldiPersone, setSoldiPersone] = useState({
+        Luz: 0, Miche: 0, Nicco: 0, Sara: 0, Manu: 0
+      });
+      const [iscritti, setIscritti] = useState([]);
+      const [presenze, setPresenze] = useState([]);
+      
+      const [nuovoMovimento, setNuovoMovimento] = useState({
+        tipo: 'entrata',
+        importo: '',
+        descrizione: '',
+        data: new Date().toISOString().split('T')[0]
+      });
+      
+      const [movimentoPersona, setMovimentoPersona] = useState({
+        persona: 'Luz',
+        tipo: 'ha_messo',
+        importo: '',
+        descrizione: ''
+      });
+      
+      const [nuovoIscritto, setNuovoIscritto] = useState({
+        nome: '',
+        cognome: '',
+        telefono: '',
+        email: '',
+        dataIscrizione: new Date().toISOString().split('T')[0]
+      });
+      
+      const [nuovaPresenza, setNuovaPresenza] = useState({
+        data: new Date().toISOString().split('T')[0],
+        tipo: 'studente',
+        nome: '',
+        presente: true
+      });
+
+      useEffect(() => {
+        lucide.createIcons();
+      });
+
+      const saveToFirebase = async (path, data) => {
+        try {
+          const response = await fetch(`${DB_URL}/${path}.json`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+          });
+          return await response.json();
+        } catch (error) {
+          console.error('Errore salvataggio Firebase:', error);
+          alert('Errore sincronizzazione. Verifica le credenziali Firebase!');
+        }
+      };
+
+      const loadFromFirebase = async (path) => {
+        try {
+          const response = await fetch(`${DB_URL}/${path}.json`);
+          const data = await response.json();
+          return data || null;
+        } catch (error) {
+          console.error('Errore lettura Firebase:', error);
+          return null;
+        }
+      };
+
+      useEffect(() => {
+        if (isLoggedIn) {
+          loadAllData();
+          const interval = setInterval(loadAllData, 10000);
+          return () => clearInterval(interval);
+        }
+      }, [isLoggedIn]);
+
+      const loadAllData = async () => {
+        setSyncing(true);
+        const [movimentiData, soldiData, iscrittiData, presenzeData] = await Promise.all([
+          loadFromFirebase('movimenti'),
+          loadFromFirebase('soldiPersone'),
+          loadFromFirebase('iscritti'),
+          loadFromFirebase('presenze')
+        ]);
+        
+        if (movimentiData) setMovimenti(movimentiData);
+        if (soldiData) setSoldiPersone(soldiData);
+        if (iscrittiData) setIscritti(iscrittiData);
+        if (presenzeData) setPresenze(presenzeData);
+        setSyncing(false);
+      };
+
+      useEffect(() => {
+        if (isLoggedIn && movimenti.length >= 0) {
+          saveToFirebase('movimenti', movimenti);
+        }
+      }, [movimenti]);
+
+      useEffect(() => {
+        if (isLoggedIn) {
+          saveToFirebase('soldiPersone', soldiPersone);
+        }
+      }, [soldiPersone]);
+
+      useEffect(() => {
+        if (isLoggedIn && iscritti.length >= 0) {
+          saveToFirebase('iscritti', iscritti);
+        }
+      }, [iscritti]);
+
+      useEffect(() => {
+        if (isLoggedIn && presenze.length >= 0) {
+          saveToFirebase('presenze', presenze);
+        }
+      }, [presenze]);
+
+      const handleLogin = () => {
+        if (password === 'associazione2025') {
+          setIsLoggedIn(true);
+          setPassword('');
+        } else {
+          alert('Password errata!');
+        }
+      };
+
+      const calcolaTotaleCassa = () => {
+        return movimenti.reduce((acc, mov) => {
+          return mov.tipo === 'entrata' ? acc + parseFloat(mov.importo) : acc - parseFloat(mov.importo);
+        }, 0);
+      };
+
+      const aggiungiMovimento = () => {
+        if (!nuovoMovimento.importo || !nuovoMovimento.descrizione) {
+          alert('Inserisci importo e descrizione!');
+          return;
+        }
+        
+        setMovimenti([...movimenti, {
+          ...nuovoMovimento,
+          id: Date.now(),
+          importo: parseFloat(nuovoMovimento.importo)
+        }]);
+        
+        setNuovoMovimento({
+          tipo: 'entrata',
+          importo: '',
+          descrizione: '',
+          data: new Date().toISOString().split('T')[0]
+        });
+      };
+
+      const aggiungiMovimentoPersona = () => {
+        if (!movimentoPersona.importo || !movimentoPersona.descrizione) {
+          alert('Inserisci importo e descrizione!');
+          return;
+        }
+        
+        const importo = parseFloat(movimentoPersona.importo);
+        const nuovoValore = movimentoPersona.tipo === 'ha_messo' 
+          ? soldiPersone[movimentoPersona.persona] + importo
+          : soldiPersone[movimentoPersona.persona] - importo;
+        
+        setSoldiPersone({
+          ...soldiPersone,
+          [movimentoPersona.persona]: nuovoValore
+        });
+        
+        setMovimentoPersona({
+          persona: 'Luz',
+          tipo: 'ha_messo',
+          importo: '',
+          descrizione: ''
+        });
+      };
+
+      const aggiungiIscritto = () => {
+        if (!nuovoIscritto.nome || !nuovoIscritto.cognome) {
+          alert('Inserisci almeno nome e cognome!');
+          return;
+        }
+        
+        setIscritti([...iscritti, {
+          ...nuovoIscritto,
+          id: Date.now()
+        }]);
+        
+        setNuovoIscritto({
+          nome: '',
+          cognome: '',
+          telefono: '',
+          email: '',
+          dataIscrizione: new Date().toISOString().split('T')[0]
+        });
+      };
+
+      const aggiungiPresenza = () => {
+        if (!nuovaPresenza.nome) {
+          alert('Inserisci il nome!');
+          return;
+        }
+        
+        setPresenze([...presenze, {
+          ...nuovaPresenza,
+          id: Date.now()
+        }]);
+        
+        setNuovaPresenza({
+          data: new Date().toISOString().split('T')[0],
+          tipo: 'studente',
+          nome: '',
+          presente: true
+        });
+      };
+
+      const eliminaMovimento = (id) => {
+        if (window.confirm('Eliminare questo movimento?')) {
+          setMovimenti(movimenti.filter(m => m.id !== id));
+        }
+      };
+
+      const eliminaIscritto = (id) => {
+        if (window.confirm('Eliminare questo iscritto?')) {
+          setIscritti(iscritti.filter(i => i.id !== id));
+        }
+      };
+
+      const eliminaPresenza = (id) => {
+        if (window.confirm('Eliminare questa presenza?')) {
+          setPresenze(presenze.filter(p => p.id !== id));
+        }
+      };
+
+      if (!isLoggedIn) {
+        return (
+          <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
+              <div className="text-center mb-8">
+                <i data-lucide="log-in" className="w-16 h-16 mx-auto text-blue-600 mb-4"></i>
+                <h1 className="text-3xl font-bold text-gray-800">Gestione Associazione</h1>
+                <p className="text-gray-600 mt-2">Sincronizzato Firebase</p>
+              </div>
+              <div className="space-y-4">
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <button 
+                  onClick={handleLogin}
+                  className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-semibold"
+                >
+                  Accedi
+                </button>
+              </div>
+              <p className="text-center text-sm text-gray-500 mt-4">Password: associazione2025</p>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen bg-gray-100">
+          <header className="bg-white shadow-md">
+            <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">Gestione Associazione</h1>
+                <div className="flex items-center gap-2 text-sm text-gray-600 mt-1">
+                  <i data-lucide="refresh-cw" className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`}></i>
+                  <span>{syncing ? 'Sincronizzazione...' : 'Sincronizzato'}</span>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsLoggedIn(false);
+                  setMovimenti([]);
+                  setSoldiPersone({Luz: 0, Miche: 0, Nicco: 0, Sara: 0, Manu: 0});
+                  setIscritti([]);
+                  setPresenze([]);
+                }}
+                className="flex items-center gap-2 text-red-600 hover:text-red-700"
+              >
+                <i data-lucide="log-out" className="w-5 h-5"></i>
+                Esci
+              </button>
+            </div>
+          </header>
+
+          <nav className="bg-white shadow-sm">
+            <div className="max-w-7xl mx-auto px-4">
+              <div className="flex overflow-x-auto">
+                {[
+                  { id: 'cassa', label: 'Cassa', icon: 'dollar-sign' },
+                  { id: 'persone', label: 'Persone', icon: 'users' },
+                  { id: 'iscritti', label: 'Iscritti', icon: 'user-plus' },
+                  { id: 'presenze', label: 'Presenze', icon: 'calendar' }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-2 px-6 py-4 border-b-2 transition whitespace-nowrap ${
+                      activeTab === tab.id
+                        ? 'border-blue-600 text-blue-600'
+                        : 'border-transparent text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    <i data-lucide={tab.icon} className="w-5 h-5"></i>
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </nav>
+
+          <main className="max-w-7xl mx-auto px-4 py-8">
+            {activeTab === 'cassa' && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h2 className="text-2xl font-bold mb-2">Totale Cassa</h2>
+                  <p className={`text-4xl font-bold ${calcolaTotaleCassa() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    €{calcolaTotaleCassa().toFixed(2)}
+                  </p>
+                </div>
+
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-xl font-bold mb-4">Nuovo Movimento</h3>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <select
+                        value={nuovoMovimento.tipo}
+                        onChange={(e) => setNuovoMovimento({...nuovoMovimento, tipo: e.target.value})}
+                        className="px-4 py-2 border rounded-lg"
+                      >
+                        <option value="entrata">Entrata</option>
+                        <option value="uscita">Uscita</option>
+                      </select>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="Importo (€)"
+                        value={nuovoMovimento.importo}
+                        onChange={(e) => setNuovoMovimento({...nuovoMovimento, importo: e.target.value})}
+                        className="px-4 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Descrizione (es: Affitto palestra)"
+                      value={nuovoMovimento.descrizione}
+                      onChange={(e) => setNuovoMovimento({...nuovoMovimento, descrizione: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg"
+                    />
+                    <input
+                      type="date"
+                      value={nuovoMovimento.data}
+                      onChange={(e) => setNuovoMovimento({...nuovoMovimento, data: e.target.value})}
+                      className="px-4 py-2 border rounded-lg"
+                    />
+                    <button onClick={aggiungiMovimento} className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700">
+                      Aggiungi Movimento
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-xl font-bold mb-4">Storico Movimenti</h3>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {movimenti.length === 0 ? (
+                      <p className="text-gray-500 text-center py-4">Nessun movimento registrato</p>
+                    ) : (
+                      movimenti.slice().reverse().map(mov => (
+                        <div key={mov.id} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                          <div className="flex-1">
+                            <p className="font-semibold">{mov.descrizione}</p>
+                            <p className="text-sm text-gray-600">{mov.data}</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                              presenza.presente ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                            }`}>
+                              {presenza.presente ? 'Presente' : 'Assente'}
+                            </span>
+                            <button 
+                              onClick={() => eliminaPresenza(presenza.id)}
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<AssociazioneApp />);
+  </script>
+</body>
+</html> gap-3">
+                            <span className={`font-bold ${mov.tipo === 'entrata' ? 'text-green-600' : 'text-red-600'}`}>
+                              {mov.tipo === 'entrata' ? '+' : '-'}€{mov.importo.toFixed(2)}
+                            </span>
+                            <button 
+                              onClick={() => eliminaMovimento(mov.id)}
+                              className="text-red-500 hover:text-red-700 text-sm"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'persone' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {PERSONE.map(persona => (
+                    <div key={persona} className="bg-white rounded-lg shadow-md p-6">
+                      <h3 className="text-xl font-bold mb-2">{persona}</h3>
+                      <p className={`text-3xl font-bold ${soldiPersone[persona] >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        €{soldiPersone[persona].toFixed(2)}
+                      </p>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {soldiPersone[persona] >= 0 ? 'Da ricevere' : 'Ha preso in più'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-xl font-bold mb-4">Registra Movimento Persona</h3>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <select
+                        value={movimentoPersona.persona}
+                        onChange={(e) => setMovimentoPersona({...movimentoPersona, persona: e.target.value})}
+                        className="px-4 py-2 border rounded-lg"
+                      >
+                        {PERSONE.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                      <select
+                        value={movimentoPersona.tipo}
+                        onChange={(e) => setMovimentoPersona({...movimentoPersona, tipo: e.target.value})}
+                        className="px-4 py-2 border rounded-lg"
+                      >
+                        <option value="ha_messo">Ha messo</option>
+                        <option value="ha_preso">Ha preso</option>
+                      </select>
+                    </div>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="Importo (€)"
+                      value={movimentoPersona.importo}
+                      onChange={(e) => setMovimentoPersona({...movimentoPersona, importo: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Descrizione"
+                      value={movimentoPersona.descrizione}
+                      onChange={(e) => setMovimentoPersona({...movimentoPersona, descrizione: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg"
+                    />
+                    <button onClick={aggiungiMovimentoPersona} className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700">
+                      Registra
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'iscritti' && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-xl font-bold mb-2">Totale Iscritti</h3>
+                  <p className="text-4xl font-bold text-blue-600">{iscritti.length}</p>
+                </div>
+
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-xl font-bold mb-4">Nuovo Iscritto</h3>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <input
+                        type="text"
+                        placeholder="Nome"
+                        value={nuovoIscritto.nome}
+                        onChange={(e) => setNuovoIscritto({...nuovoIscritto, nome: e.target.value})}
+                        className="px-4 py-2 border rounded-lg"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Cognome"
+                        value={nuovoIscritto.cognome}
+                        onChange={(e) => setNuovoIscritto({...nuovoIscritto, cognome: e.target.value})}
+                        className="px-4 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <input
+                        type="tel"
+                        placeholder="Telefono"
+                        value={nuovoIscritto.telefono}
+                        onChange={(e) => setNuovoIscritto({...nuovoIscritto, telefono: e.target.value})}
+                        className="px-4 py-2 border rounded-lg"
+                      />
+                      <input
+                        type="email"
+                        placeholder="Email"
+                        value={nuovoIscritto.email}
+                        onChange={(e) => setNuovoIscritto({...nuovoIscritto, email: e.target.value})}
+                        className="px-4 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <input
+                      type="date"
+                      value={nuovoIscritto.dataIscrizione}
+                      onChange={(e) => setNuovoIscritto({...nuovoIscritto, dataIscrizione: e.target.value})}
+                      className="px-4 py-2 border rounded-lg"
+                    />
+                    <button onClick={aggiungiIscritto} className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700">
+                      Aggiungi Iscritto
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-xl font-bold mb-4">Elenco Iscritti</h3>
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {iscritti.length === 0 ? (
+                      <p className="text-gray-500 text-center py-4">Nessun iscritto registrato</p>
+                    ) : (
+                      iscritti.slice().reverse().map(iscritto => (
+                        <div key={iscritto.id} className="p-4 bg-gray-50 rounded-lg relative">
+                          <button 
+                            onClick={() => eliminaIscritto(iscritto.id)}
+                            className="absolute top-2 right-2 text-red-500 hover:text-red-700"
+                          >
+                            ✕
+                          </button>
+                          <h4 className="font-bold text-lg">{iscritto.nome} {iscritto.cognome}</h4>
+                          <p className="text-sm text-gray-600">Tel: {iscritto.telefono}</p>
+                          <p className="text-sm text-gray-600">Email: {iscritto.email}</p>
+                          <p className="text-sm text-gray-600">Iscritto dal: {iscritto.dataIscrizione}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'presenze' && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-xl font-bold mb-4">Registra Presenza</h3>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <input
+                        type="date"
+                        value={nuovaPresenza.data}
+                        onChange={(e) => setNuovaPresenza({...nuovaPresenza, data: e.target.value})}
+                        className="px-4 py-2 border rounded-lg"
+                      />
+                      <select
+                        value={nuovaPresenza.tipo}
+                        onChange={(e) => setNuovaPresenza({...nuovaPresenza, tipo: e.target.value})}
+                        className="px-4 py-2 border rounded-lg"
+                      >
+                        <option value="studente">Studente</option>
+                        <option value="istruttore">Istruttore</option>
+                      </select>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Nome persona"
+                      value={nuovaPresenza.nome}
+                      onChange={(e) => setNuovaPresenza({...nuovaPresenza, nome: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg"
+                    />
+                    <select
+                      value={nuovaPresenza.presente}
+                      onChange={(e) => setNuovaPresenza({...nuovaPresenza, presente: e.target.value === 'true'})}
+                      className="w-full px-4 py-2 border rounded-lg"
+                    >
+                      <option value="true">Presente</option>
+                      <option value="false">Assente</option>
+                    </select>
+                    <button onClick={aggiungiPresenza} className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700">
+                      Registra Presenza
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-xl font-bold mb-4">Registro Presenze</h3>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {presenze.length === 0 ? (
+                      <p className="text-gray-500 text-center py-4">Nessuna presenza registrata</p>
+                    ) : (
+                      presenze.slice().reverse().map(presenza => (
+                        <div key={presenza.id} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                          <div className="flex-1">
+                            <p className="font-semibold">{presenza.nome}</p>
+                            <p className="text-sm text-gray-600">
+                              {presenza.data} - {presenza.tipo === 'studente' ? 'Studente' : 'Istruttore'}
+                            </p>
+                          </div>
+                          <div className="flex items-center
